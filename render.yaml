@@ -1,0 +1,35 @@
+services:
+  - type: worker
+    name: iphone-duo-pickup
+    env: python
+    buildCommand: "echo 'no build step, stdlib only'"
+    startCommand: "python3 watcher.py"
+    envVars:
+      - key: APPLE_LOCATION
+        value: "11754"
+      - key: PARTS
+        value: "MK1H4LL/A"
+      - key: TARGET_STORES
+        value: "Smith Haven,Walt Whitman,Roosevelt Field,Manhasset"
+      - key: POLL_INTERVAL_SECONDS
+        value: "12"
+      - key: PUSH_PROVIDER
+        value: "pushover"
+      - key: BUY_URL
+        value: "https://www.apple.com/shop/buy-iphone/iphone-duo"
+      # Secrets below are set in the Render dashboard by Parker, never in chat
+      # and never in this file:
+      # - PUSHOVER_TOKEN
+      # - PUSHOVER_USER
+      # - DATABASE_URL (Supabase Postgres, after running schema.sql)
+      # Scope decided 2026-10-30: existing Vercel Duo Tracker handles
+      # availability alerts. This worker is for AUTO-CHECKOUT ONLY.
+      # CHECKOUT_ONLY=true suppresses duplicate availability alerts;
+      # Pushover is used only for checkout bought/failed results.
+      - key: CHECKOUT_ONLY
+        value: "true"
+      # Auto checkout is NOT enabled by this file. See README: the checkout
+      # driver needs a proven Apple session first; enabling it blind would
+      # mean claiming a purchase that never happened.
+      - key: AUTO_CHECKOUT_ENABLED
+        value: "false"
