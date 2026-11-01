@@ -1,0 +1,133 @@
+# Merged iPhone Duo service — Render Blueprint (ONE service, Docker)
+#
+# WHAT THIS REPLACES
+# The live Python watcher worker (service id srv-dbiulrm7bikc73du622g,
+# dashboard https://dashboard.render.com/worker/srv-dbiulrm7bikc73du622g,
+# Blueprint from repo fmx520/fail master, Python 3, startCommand
+# "python3 watcher.py"). This blueprint is its REPLACEMENT, not an
+# addition: total cost after migration is $25/mo for this ONE service,
+# not $7 + $25. See MIGRATION.md in this directory for the exact
+# cutover sequence — never run this service live alongside the old
+# worker with checkout enabled. That is how you place two orders.
+#
+# BLUEPRINT PATHS — VERIFIED AGAINST THE REPO LAYOUT (2026-11-01)
+# fmx520/fail repo root contains: watcher.py, checkout.py, render.yaml,
+# schema.sql, README.md, .env.example, plus buyer/ and merged/
+# subdirectories. This blueprint MUST be applied from the repo root
+# (i.e. this file's contents placed at the repo root as render.yaml
+# when creating the service — Render reads its blueprint from the
+# repo root, not from merged/). With that placement:
+#   dockerContext: .                  = repo root
+#   dockerfilePath: ./merged/merged.Dockerfile  = merged/merged.Dockerfile
+#   Dockerfile COPYs (watcher.py, checkout.py, buyer/, merged/) are
+#   all relative to that same repo-root context and resolve correctly.
+# Do NOT change dockerContext to ./merged — that would break every
+# COPY in the Dockerfile, which expects watcher.py/buyer/ at context
+# root. See also merged.Dockerfile header (same verified layout).
+#
+# TARGET SPEC (confirmed 2026-11-01, do not change without Parker)
+# iPhone Duo 512GB Night Sky, part MK1H4LL/A, $2,199 + tax, unlocked /
+# connect later, no trade-in, AppleCare+ on the YEARLY payment option,
+# default payment method on Parker's Apple account, earliest pickup
+# slot. Store priority: Smith Haven (R139) > Walt Whitman (R068) >
+# Roosevelt Field (R060) > Manhasset (R327); on sellout mid-checkout,
+# try the next store in that order. TARGET_STORES below is in priority
+# order — the merged service must treat list order as priority order.
+# AppleCare note: $199.99/yr is REPORTED, not verified — the exact
+# annual selection value must be read off the checkout UI in the dry
+# run. No AppleCare part number is hard-coded anywhere in this file.
+
+services:
+  - type: worker
+    name: iphone-duo-pickup-merged
+    env: docker
+    dockerfilePath: ./merged/merged.Dockerfile
+    dockerContext: .
+    # Standard = 1 CPU / 2 GB RAM, confirmed 2026-11-01, $25/mo total,
+    # REPLACING the old $7/mo worker (not in addition to it).
+    # 2 GB is the floor for Chromium + Playwright + watcher (see
+    # merged.Dockerfile header). Do NOT use starter (0.5 CPU / 512 MB):
+    # Chromium either fails to launch or gets OOM-killed there.
+    plan: standard
+    # numInstances MUST stay 1. Two merged services racing on one hit is
+    # how you place two orders. A single instance is the first line of
+    # defense; the merged service's own duplicate guard is the second.
+    numInstances: 1
+    envVars:
+      # --- Preserved verbatim from the live worker's render.yaml ---
+      # All 8 non-secret env vars, same values. Changing any of these
+      # changes what is watched or what is bought — don't.
+      - key: APPLE_LOCATION
+        value: "11754"
+      - key: PARTS
+        value: "MK1H4LL/A"
+      - key: TARGET_STORES
+        value: "Smith Haven,Walt Whitman,Roosevelt Field,Manhasset"
+      - key: POLL_INTERVAL_SECONDS
+        value: "12"
+      - key: PUSH_PROVIDER
+        value: "pushover"
+      - key: BUY_URL
+        value: "https://www.apple.com/shop/buy-iphone/iphone-duo"
+      - key: CHECKOUT_ONLY
+        value: "true"
+      - key: AUTO_CHECKOUT_ENABLED
+        value: "false"
+      # --- Safety defaults for the merged service (all OFF) ---
+      # DRY_RUN stops before Place Order. LIVE_BUY_ENABLED is the second
+      # live gate (buyer.py requires BOTH DRY_RUN=false AND
+      # LIVE_BUY_ENABLED=true, plus AUTO_CHECKOUT_ENABLED=true above).
+      # Flip these ONLY for a supervised dry run, then a supervised
+      # live attempt — never as part of the initial migration deploy.
+      - key: DRY_RUN
+        value: "true"
+      - key: LIVE_BUY_ENABLED
+        value: "false"
+      # --- Checkout configuration, carried over from buyer/render-buyer.yaml ---
+      # (confirmed 2026-11-01; see TARGET SPEC header for the full spec)
+      - key: APPLECARE
+        value: "yearly"
+      - key: TRADE_IN
+        value: "none"
+      - key: PICKUP_SLOT
+        value: "earliest"
+      # --- Buyer signaling (in-process, NOT Supabase) ---
+      # The buyer does NOT poll Apple in warm mode and does NOT poll
+      # Supabase for a hit signal. Signaling is a queue.Queue(maxsize=1)
+      # shared in-process between the watcher thread (producer) and the
+      # buyer thread (consumer); queue.get() wakes instantly (~1 s),
+      # with no poll interval at all. There is deliberately NO
+      # SIGNAL_POLL_SECONDS var: any such var would misdescribe the
+      # mechanism. merged_service.py reads SIGNAL_SOURCE only to
+      # validate it: it must be "in_process_queue" (default) and any
+      # other value is logged as a warning and ignored — the service
+      # never falls back to a Supabase claim round-trip.
+      - key: SIGNAL_SOURCE
+        value: "in_process_queue"
+      # Profile restore strategy for the warm signed-in browser session
+      # (see buyer/PROFILE_STRATEGY.md). No Apple credentials are stored
+      # anywhere in this service; the session comes from the user's own
+      # signed-in browser profile. No auto sign-in path exists — a
+      # missing/expired session is a hard stop, not a sign-in attempt.
+      - key: PROFILE_STRATEGY
+        value: "storage_state_blob"
+      # --- Secrets: NOT in this file, NOT in Git, NEVER in chat ---
+      # Render dashboard env vars are PER-SERVICE. Creating this as a
+      # new service does NOT carry over the old worker's dashboard env
+      # vars automatically. Parker must re-set all three on the NEW
+      # service in the Render dashboard before it can write drops or
+      # send result pushes (names only — values are never written here):
+      # - DATABASE_URL    (Supabase Postgres; shared drops table, after
+      #                    running schema.sql — already done for the old
+      #                    worker, no re-run needed)
+      # - PUSHOVER_TOKEN  (Pushover app token; result notifications only)
+      # - PUSHOVER_USER   (Pushover user key; result notifications only)
+      # If Render offers to carry env vars over during migration, verify
+      # each name is present (masked value) on the new service before
+      # relying on it — do not assume the carry-over happened.
+      # Additional secret the buyer path may need (only if the merged
+      # service uses the blob profile strategy — see
+      # buyer/PROFILE_STRATEGY.md):
+      # - PROFILE_BLOB_KEY (encryption key for the storage_state blob;
+      #                     the blob itself lives in Supabase/object
+      #                     storage, not in env)

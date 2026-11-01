@@ -1,0 +1,10 @@
+# Merged watcher+buyer requirements.
+# Install with: pip install -r requirements.txt
+# Then, at IMAGE BUILD TIME (not at runtime), install the browser:
+#   playwright install chromium
+#   playwright install-deps chromium   # only if the image lacks system deps
+# Do NOT run `playwright install` on every worker start — it is slow and
+# can fail on a small worker; bake Chromium into the image instead.
+# The watcher loop itself is stdlib-only; Playwright is for the buyer
+# thread only.
+playwright>=1.44
