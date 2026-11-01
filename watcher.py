@@ -189,9 +189,13 @@ def log_transition(store, part, title, appeared=None, disappeared=None):
             print(f"[DB WARN] {e}", flush=True)
 
 
+HEARTBEAT_SECONDS = float(os.environ.get("HEARTBEAT_SECONDS", "300"))
+
+
 def main():
     state = {}   # (store, part) -> (hit, title, appeared_at_ny)
     backoff = POLL
+    last_heartbeat = time.monotonic()
     print(f"Watching {PARTS} at {TARGET_STORES} from {LOCATION}, poll={POLL}s", flush=True)
     while True:
         try:
@@ -208,6 +212,11 @@ def main():
             time.sleep(backoff)
             continue
         backoff = POLL  # a good check clears the backoff
+        if time.monotonic() - last_heartbeat >= HEARTBEAT_SECONDS:
+            hits = sum(1 for v in current.values() if v[0])
+            print(f"[HEARTBEAT] {now_ny()} last Apple check OK, "
+                  f"{hits}/{len(current)} target store/configs available", flush=True)
+            last_heartbeat = time.monotonic()
         for key, (hit, title, quote) in current.items():
             store, part = key
             prev_hit, _, appeared = state.get(key, (False, title, None))
